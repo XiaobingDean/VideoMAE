@@ -10,6 +10,7 @@ For the paper, they use the subset of MVImgNet - 1.14M frames, 38K scenes of 177
 This code is tested for Pytorch 2.4.0 with CUDA 11.8.
 
 ```sh
+conda create -n nvi python==3.9
 pip install -r requirements.txt
 ```
 ### Training NViST
