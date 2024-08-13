@@ -1,7 +1,6 @@
 import math
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.utils.checkpoint as checkpoint
 from functools import partial
 
@@ -9,43 +8,42 @@ from modeling_finetune import Block, _cfg, PatchEmbed, get_sinusoid_encoding_tab
 from timm.models.registry import register_model
 from timm.models.layers import trunc_normal_ as __call_trunc_normal_
 
-
-
 def trunc_normal_(tensor, mean=0., std=1.):
     __call_trunc_normal_(tensor, mean=mean, std=std, a=-std, b=std)
 
-
 __all__ = [
     'pretrain_videomae_small_patch16_224',
-    'pretrain_videomae_base_patch16_224', 
-    'pretrain_videomae_large_patch16_224', 
+    'pretrain_videomae_base_patch16_224',
+    'pretrain_videomae_large_patch16_224',
     'pretrain_videomae_huge_patch16_224',
 ]
 
-
 class PretrainVisionTransformerEncoder(nn.Module):
-    """ Vision Transformer with support for patch or hybrid CNN input stage
-    """
+    """ Vision Transformer Encoder with support for patch embedding and camera pose and direction information """
     def __init__(self, img_size=224, patch_size=16, in_chans=3, num_classes=0, embed_dim=768, depth=12,
                  num_heads=12, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop_rate=0., attn_drop_rate=0.,
-                 drop_path_rate=0., norm_layer=nn.LayerNorm, init_values=None, tubelet_size=2, use_checkpoint=False,
-                 use_learnable_pos_emb=False):
+                 drop_path_rate=0., norm_layer=nn.LayerNorm, init_values=None, use_checkpoint=False,
+                 use_learnable_pos_emb=False, pose_dim=6):
         super().__init__()
         self.num_classes = num_classes
         self.num_features = self.embed_dim = embed_dim  # num_features for consistency with other models
+
+        # Patch Embedding with camera pose and direction information
         self.patch_embed = PatchEmbed(
-            img_size=img_size, patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim,tubelet_size=tubelet_size)
+            img_size=img_size, patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim, pose_dim=pose_dim)
         num_patches = self.patch_embed.num_patches
         self.use_checkpoint = use_checkpoint
 
-
-        # TODO: Add the cls token
+        # Positional Embeddings
         if use_learnable_pos_emb:
-            self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + 1, embed_dim))
+            self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, embed_dim))
+            trunc_normal_(self.pos_embed, std=.02)
         else:
-            # sine-cosine positional embeddings 
             self.pos_embed = get_sinusoid_encoding_table(num_patches, embed_dim)
 
+        self.pos_drop = nn.Dropout(p=drop_rate)
+
+        # Transformer Blocks
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
         self.blocks = nn.ModuleList([
             Block(
@@ -53,60 +51,38 @@ class PretrainVisionTransformerEncoder(nn.Module):
                 drop=drop_rate, attn_drop=attn_drop_rate, drop_path=dpr[i], norm_layer=norm_layer,
                 init_values=init_values)
             for i in range(depth)])
-        self.norm =  norm_layer(embed_dim)
-        self.head = nn.Linear(embed_dim, num_classes) if num_classes > 0 else nn.Identity()
-
-        if use_learnable_pos_emb:
-            trunc_normal_(self.pos_embed, std=.02)
+        self.norm = norm_layer(embed_dim)
 
         self.apply(self._init_weights)
 
-
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
-            nn.init.xavier_uniform_(m.weight)
+            trunc_normal_(m.weight, std=.02)
             if isinstance(m, nn.Linear) and m.bias is not None:
                 nn.init.constant_(m.bias, 0)
         elif isinstance(m, nn.LayerNorm):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
 
-    def get_num_layers(self):
-        return len(self.blocks)
+    def forward_features(self, x, pose, direction):
+        x = self.patch_embed(x, pose, direction)
+        B, _, _ = x.size()
 
-    @torch.jit.ignore
-    def no_weight_decay(self):
-        return {'pos_embed', 'cls_token'}
-
-    def get_classifier(self):
-        return self.head
-
-    def reset_classifier(self, num_classes, global_pool=''):
-        self.num_classes = num_classes
-        self.head = nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
-
-    def forward_features(self, x, mask):
-        _, _, T, _, _ = x.shape
-        x = self.patch_embed(x)
-        
-        x = x + self.pos_embed.type_as(x).to(x.device).clone().detach()
-
-        B, _, C = x.shape
-        x_vis = x[~mask].reshape(B, -1, C) # ~mask means visible
+        x = x + self.pos_embed.expand(B, -1, -1).type_as(x).to(x.device).clone().detach()
+        x = self.pos_drop(x)
 
         if self.use_checkpoint:
             for blk in self.blocks:
-                x_vis = checkpoint.checkpoint(blk, x_vis)
-        else:   
+                x = checkpoint.checkpoint(blk, x)
+        else:
             for blk in self.blocks:
-                x_vis = blk(x_vis)
+                x = blk(x)
 
-        x_vis = self.norm(x_vis)
-        return x_vis
+        x = self.norm(x)
+        return x
 
-    def forward(self, x, mask):
-        x = self.forward_features(x, mask)
-        x = self.head(x)
+    def forward(self, x, pose, direction):
+        x = self.forward_features(x, pose, direction)
         return x
 
 class PretrainVisionTransformerDecoder(nn.Module):
