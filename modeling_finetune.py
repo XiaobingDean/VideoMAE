@@ -53,9 +53,8 @@ class Attention(nn.Module):
         self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
 
-        # Absolute and Relative Positional Embeddings
-        self.abs_pos_emb = nn.Parameter(torch.randn(1, 500, dim))  # Assuming max tokens is 500
-        self.relative_pos_emb = nn.Parameter(torch.randn(2 * 500 - 1, dim))  # Relative position embedding
+        # Relative positional embeddings
+        self.relative_pos_embed = nn.Parameter(torch.randn(2 * 500 - 1, dim))  # Adjust this dimension accordingly
 
     def forward(self, x):
         B, N, C = x.shape
@@ -63,14 +62,12 @@ class Attention(nn.Module):
         q, k, v = qkv[0], qkv[1], qkv[2]
 
         q = q * self.scale
+        attn = (q @ k.transpose(-2, -1))
 
-        # Add absolute positional embedding
-        q = q + self.abs_pos_emb[:, :N, :].unsqueeze(0)
-        k = k + self.abs_pos_emb[:, :N, :].unsqueeze(0)
+        # Add relative positional embedding
+        rel_pos_embed = torch.einsum('b h i d, r d -> b h i r', q, self.relative_pos_embed)
+        attn = attn + rel_pos_embed
 
-        # Relative positional embedding
-        rel_pos_emb = torch.einsum('b h i d, r d -> b h i r', q, self.relative_pos_emb)
-        attn = (q @ k.transpose(-2, -1)) + rel_pos_emb
         attn = attn.softmax(dim=-1)
         attn = self.attn_drop(attn)
 
@@ -101,18 +98,23 @@ class Block(nn.Module):
 
 # Patch Embedding with camera pose information
 class PatchEmbed(nn.Module):
-    def __init__(self, img_size=224, patch_size=16, in_chans=3, embed_dim=768, camera_pose_dim=3):
+    def __init__(self, img_size=224, patch_size=16, in_chans=3, embed_dim=768, pose_dim=6):
         super().__init__()
         img_size = to_2tuple(img_size)
         patch_size = to_2tuple(patch_size)
         self.num_patches = (img_size[1] // patch_size[1]) * (img_size[0] // patch_size[0])
         self.img_size = img_size
         self.patch_size = patch_size
-        self.proj = nn.Conv2d(in_chans + camera_pose_dim, embed_dim, kernel_size=patch_size, stride=patch_size)
+        self.proj = nn.Conv2d(in_chans + pose_dim, embed_dim, kernel_size=patch_size, stride=patch_size)
 
-    def forward(self, x, camera_pose):
-        # Concatenate camera pose as additional channels
-        x = torch.cat((x, camera_pose), dim=1)
+    def forward(self, x, pose, direction):
+        # Ensure that pose and direction tensors are appropriately shaped
+        B, C, H, W = x.shape
+        pose_direction = torch.cat((pose, direction), dim=1).unsqueeze(-1).unsqueeze(-1)  # Add spatial dimensions
+        pose_direction = pose_direction.expand(B, -1, H, W)  # Match image dimensions
+
+        # Concatenate with image along the channel dimension
+        x = torch.cat((x, pose_direction), dim=1)
         x = self.proj(x).flatten(2).transpose(1, 2)
         return x
 
@@ -149,14 +151,14 @@ class VisionTransformer(nn.Module):
                  init_values=0.,
                  use_learnable_pos_emb=False,
                  init_scale=0.,
-                 camera_pose_dim=3,
+                 camera_pose_dim=3,  # Adjusted this to include camera pose channels
                  use_checkpoint=False,
                  use_mean_pooling=True):
         super().__init__()
         self.num_classes = num_classes
         self.num_features = self.embed_dim = embed_dim  # num_features for consistency with other models
         self.patch_embed = PatchEmbed(
-            img_size=img_size, patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim, camera_pose_dim=camera_pose_dim)
+            img_size=img_size, patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim, pose_dim=camera_pose_dim)
         num_patches = self.patch_embed.num_patches
 
         # Positional Embeddings
@@ -197,14 +199,16 @@ class VisionTransformer(nn.Module):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
 
-    def forward_features(self, x, camera_pose):
-        x = self.patch_embed(x, camera_pose)
+    def forward_features(self, x, pose, direction):
+        # Forward through PatchEmbed
+        x = self.patch_embed(x, pose, direction)
         B, _, _ = x.size()
 
         if self.pos_embed is not None:
             x = x + self.pos_embed.expand(B, -1, -1).type_as(x).to(x.device).clone().detach()
         x = self.pos_drop(x)
 
+        # Forward through Transformer blocks
         for blk in self.blocks:
             x = blk(x)
 
@@ -214,8 +218,8 @@ class VisionTransformer(nn.Module):
         else:
             return x[:, 0]
 
-    def forward(self, x, camera_pose):
-        x = self.forward_features(x, camera_pose)
+    def forward(self, x, pose, direction):
+        x = self.forward_features(x, pose, direction)
         x = self.head(self.fc_dropout(x))
         return x
 
