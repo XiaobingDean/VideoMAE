@@ -1,11 +1,85 @@
 import math
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.utils.checkpoint as checkpoint
 from functools import partial
 from timm.models.layers import drop_path, to_2tuple, trunc_normal_
 from timm.models.registry import register_model
+
+
+# Custom Linear Layers
+class JaxLinear(nn.Linear):
+    """ Linear layers with initialization matching the Jax defaults """
+    def reset_parameters(self):
+        input_size = self.weight.shape[-1]
+        std = math.sqrt(1/input_size)
+        init.trunc_normal_(self.weight, std=std, a=-2.*std, b=2.*std)
+        if self.bias is not None:
+            init.zeros_(self.bias)
+
+
+class ViTLinear(nn.Linear):
+    """ Initialization for linear layers used by ViT """
+    def reset_parameters(self):
+        init.xavier_uniform_(self.weight)
+        if self.bias is not None:
+            init.normal_(self.bias, std=1e-6)
+
+
+class SRTLinear(nn.Linear):
+    """ Initialization for linear layers used in the SRT decoder """
+    def reset_parameters(self):
+        init.xavier_uniform_(self.weight)
+        if self.bias is not None:
+            init.zeros_(self.bias)
+
+
+# Positional Encoding
+class PositionalEncoding(nn.Module):
+    def __init__(self, num_octaves=8, start_octave=0):
+        super().__init__()
+        self.num_octaves = num_octaves
+        self.start_octave = start_octave
+
+    def forward(self, coords, rays=None):
+        batch_size, num_points, dim = coords.shape
+
+        octaves = torch.arange(self.start_octave, self.start_octave + self.num_octaves).float().to(coords)
+        multipliers = 2**octaves * math.pi
+        coords = coords.unsqueeze(-1)
+
+        scaled_coords = coords * multipliers
+
+        sines = torch.sin(scaled_coords).reshape(batch_size, num_points, dim * self.num_octaves)
+        cosines = torch.cos(scaled_coords).reshape(batch_size, num_points, dim * self.num_octaves)
+
+        result = torch.cat((sines, cosines), -1)
+        return result
+
+
+# Ray Encoder
+class RayEncoder(nn.Module):
+    def __init__(self, pos_octaves=8, pos_start_octave=0, ray_octaves=4, ray_start_octave=0):
+        super().__init__()
+        self.pos_encoding = PositionalEncoding(num_octaves=pos_octaves, start_octave=pos_start_octave)
+        self.ray_encoding = PositionalEncoding(num_octaves=ray_octaves, start_octave=ray_start_octave)
+
+    def forward(self, pos, rays):
+        if len(rays.shape) == 4:
+            batchsize, height, width, dims = rays.shape
+            pos_enc = self.pos_encoding(pos.unsqueeze(1))
+            pos_enc = pos_enc.view(batchsize, pos_enc.shape[-1], 1, 1).repeat(1, 1, height, width)
+            rays = rays.flatten(1, 2)
+
+            ray_enc = self.ray_encoding(rays)
+            ray_enc = ray_enc.view(batchsize, height, width, ray_enc.shape[-1]).permute((0, 3, 1, 2))
+            x = torch.cat((pos_enc, ray_enc), 1)
+        else:
+            pos_enc = self.pos_encoding(pos)
+            ray_enc = self.ray_encoding(rays)
+            x = torch.cat((pos_enc, ray_enc), -1)
+
+        return x
 
 
 # DropPath module for stochastic depth
@@ -97,7 +171,7 @@ class Block(nn.Module):
 
 
 # Patch Embedding with camera pose information
-class PatchEmbed(nn.Module):
+class PatchEmbedWithPose(nn.Module):
     def __init__(self, img_size=224, patch_size=16, in_chans=3, embed_dim=768, pose_dim=6):
         super().__init__()
         img_size = to_2tuple(img_size)
@@ -130,6 +204,7 @@ def get_sinusoid_encoding_table(n_position, d_hid):
 
     return torch.tensor(sinusoid_table, dtype=torch.float, requires_grad=False).unsqueeze(0)
 
+
 # Vision Transformer with integrated camera pose
 class VisionTransformer(nn.Module):
     def __init__(self,
@@ -157,7 +232,7 @@ class VisionTransformer(nn.Module):
         super().__init__()
         self.num_classes = num_classes
         self.num_features = self.embed_dim = embed_dim  # num_features for consistency with other models
-        self.patch_embed = PatchEmbed(
+        self.patch_embed = PatchEmbedWithPose(
             img_size=img_size, patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim, pose_dim=camera_pose_dim)
         num_patches = self.patch_embed.num_patches
 
