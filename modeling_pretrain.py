@@ -4,12 +4,6 @@ import torch.utils.checkpoint as checkpoint
 from functools import partial
 from modeling_finetune import Block, PatchEmbed, get_sinusoid_encoding_table, RayEncoder
 
-import torch
-import torch.nn as nn
-import torch.utils.checkpoint as checkpoint
-from functools import partial
-from modeling_pretrain import Block, PatchEmbed, get_sinusoid_encoding_table, RayEncoder
-
 class PretrainVisionTransformerEncoder(nn.Module):
     def __init__(self, img_size=224, patch_size=16, in_chans=6, num_classes=0, embed_dim=768, depth=12,
                  num_heads=12, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop_rate=0., attn_drop_rate=0.,
@@ -80,6 +74,8 @@ class PretrainVisionTransformerEncoder(nn.Module):
     def forward(self, x, camera_pos, rays, mask):
         return self.forward_features(x, camera_pos, rays, mask)
 
+
+
 class PretrainVisionTransformerDecoder(nn.Module):
     def __init__(self, patch_size=16, num_classes=768, embed_dim=768, depth=12, num_heads=12, mlp_ratio=4.,
                  qkv_bias=False, qk_scale=None, drop_rate=0., attn_drop_rate=0., drop_path_rate=0.,
@@ -123,8 +119,6 @@ class PretrainVisionTransformerDecoder(nn.Module):
 
         x = self.head(self.norm(x))
         return x
-
-
 
 class PretrainVisionTransformer(nn.Module):
     def __init__(self, img_size=224, patch_size=16, encoder_in_chans=3, encoder_num_classes=0,
