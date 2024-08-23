@@ -9,10 +9,10 @@ from timm.models.layers import trunc_normal_, DropPath
 from timm.models.registry import register_model
 
 
-# RayEncoder and PositionalEncoding from OSRT
+# Positional Encoding from OSRT
 class PositionalEncoding(nn.Module):
     def __init__(self, num_octaves=8, start_octave=0):
-        super().__init__()
+        super(PositionalEncoding, self).__init__()
         self.num_octaves = num_octaves
         self.start_octave = start_octave
 
@@ -24,29 +24,30 @@ class PositionalEncoding(nn.Module):
         scaled_coords = coords * multipliers
         sines = torch.sin(scaled_coords).reshape(batch_size, num_points, dim * self.num_octaves)
         cosines = torch.cos(scaled_coords).reshape(batch_size, num_points, dim * self.num_octaves)
-        return torch.cat((sines, cosines), -1)
+        return torch.cat((sines, cosines), dim=-1)
 
 
+# RayEncoder from OSRT
 class RayEncoder(nn.Module):
     def __init__(self, pos_octaves=8, pos_start_octave=0, ray_octaves=4, ray_start_octave=0):
-        super().__init__()
+        super(RayEncoder, self).__init__()
         self.pos_encoding = PositionalEncoding(num_octaves=pos_octaves, start_octave=pos_start_octave)
         self.ray_encoding = PositionalEncoding(num_octaves=ray_octaves, start_octave=ray_start_octave)
 
     def forward(self, pos, rays):
-        batchsize, height, width, dims = rays.shape
+        batch_size, height, width, dims = rays.shape
         pos_enc = self.pos_encoding(pos.unsqueeze(1))
-        pos_enc = pos_enc.view(batchsize, pos_enc.shape[-1], 1, 1).repeat(1, 1, height, width)
+        pos_enc = pos_enc.view(batch_size, pos_enc.shape[-1], 1, 1).repeat(1, 1, height, width)
         rays = rays.flatten(1, 2)
         ray_enc = self.ray_encoding(rays)
-        ray_enc = ray_enc.view(batchsize, height, width, ray_enc.shape[-1]).permute((0, 3, 1, 2))
-        x = torch.cat((pos_enc, ray_enc), 1)
-        return x
+        ray_enc = ray_enc.view(batch_size, height, width, ray_enc.shape[-1]).permute((0, 3, 1, 2))
+        return torch.cat((pos_enc, ray_enc), dim=1)
 
 
+# MLP module for Transformer blocks
 class Mlp(nn.Module):
     def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.):
-        super().__init__()
+        super(Mlp, self).__init__()
         out_features = out_features or in_features
         hidden_features = hidden_features or in_features
         self.fc1 = nn.Linear(in_features, hidden_features)
@@ -62,21 +63,51 @@ class Mlp(nn.Module):
         return x
 
 
+# Attention mechanism for Transformer
+class Attention(nn.Module):
+    def __init__(self, dim, num_heads=8, qkv_bias=False, qk_scale=None, attn_drop=0., proj_drop=0.):
+        super(Attention, self).__init__()
+        self.num_heads = num_heads
+        head_dim = dim // num_heads
+        self.scale = qk_scale or head_dim ** -0.5
+
+        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
+        self.attn_drop = nn.Dropout(attn_drop)
+        self.proj = nn.Linear(dim, dim)
+        self.proj_drop = nn.Dropout(proj_drop)
+
+    def forward(self, x):
+        B, N, C = x.shape
+        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, C // self.num_heads)
+        qkv = qkv.permute(2, 0, 3, 1, 4)  # (3, B, num_heads, N, head_dim)
+        q, k, v = qkv[0], qkv[1], qkv[2]
+
+        q = q * self.scale
+        attn = (q @ k.transpose(-2, -1)).softmax(dim=-1)
+        attn = self.attn_drop(attn)
+
+        x = (attn @ v).transpose(1, 2).reshape(B, N, C)
+        x = self.proj(x)
+        x = self.proj_drop(x)
+        return x
+
+
+# Transformer Block
 class Block(nn.Module):
     def __init__(self, dim, num_heads, mlp_ratio=4., qkv_bias=False, qk_scale=None, drop=0., attn_drop=0.,
-                 drop_path=0., init_values=None, act_layer=nn.GELU, norm_layer=nn.LayerNorm,
-                 attn_head_dim=None):
-        super().__init__()
+                 drop_path=0., init_values=None, act_layer=nn.GELU, norm_layer=nn.LayerNorm):
+        super(Block, self).__init__()
         self.norm1 = norm_layer(dim)
-        self.attn = nn.MultiheadAttention(embed_dim=dim, num_heads=num_heads, batch_first=True)
+        self.attn = Attention(
+            dim, num_heads=num_heads, qkv_bias=qkv_bias, qk_scale=qk_scale, attn_drop=attn_drop, proj_drop=drop)
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
         self.norm2 = norm_layer(dim)
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
 
         if init_values > 0:
-            self.gamma_1 = nn.Parameter(init_values * torch.ones((dim)), requires_grad=True)
-            self.gamma_2 = nn.Parameter(init_values * torch.ones((dim)), requires_grad=True)
+            self.gamma_1 = nn.Parameter(init_values * torch.ones(dim), requires_grad=True)
+            self.gamma_2 = nn.Parameter(init_values * torch.ones(dim), requires_grad=True)
         else:
             self.gamma_1, self.gamma_2 = None, None
 
@@ -90,11 +121,12 @@ class Block(nn.Module):
         return x
 
 
+# Patch Embedding for Vision Transformer
 class PatchEmbed(nn.Module):
-    """ Image to Patch Embedding
-    """
+    """ Image to Patch Embedding """
+
     def __init__(self, img_size=224, patch_size=16, in_chans=3, embed_dim=768):
-        super().__init__()
+        super(PatchEmbed, self).__init__()
         img_size = to_2tuple(img_size)
         patch_size = to_2tuple(patch_size)
         num_patches = (img_size[1] // patch_size[1]) * (img_size[0] // patch_size[0])
@@ -110,19 +142,21 @@ class PatchEmbed(nn.Module):
         return x
 
 
-# Sinusoid Position Encoding
+# Sinusoidal position encoding for transformer models
 def get_sinusoid_encoding_table(n_position, d_hid):
     def get_position_angle_vec(position):
         return [position / np.power(10000, 2 * (hid_j // 2) / d_hid) for hid_j in range(d_hid)]
+
     sinusoid_table = np.array([get_position_angle_vec(pos_i) for pos_i in range(n_position)])
     sinusoid_table[:, 0::2] = np.sin(sinusoid_table[:, 0::2])
     sinusoid_table[:, 1::2] = np.cos(sinusoid_table[:, 1::2])
     return torch.tensor(sinusoid_table, dtype=torch.float, requires_grad=False).unsqueeze(0)
 
 
+# Vision Transformer Model
 class VisionTransformer(nn.Module):
-    """ Vision Transformer with support for patch or hybrid CNN input stage
-    """
+    """ Vision Transformer with support for patch or hybrid CNN input stage """
+
     def __init__(self,
                  img_size=224,
                  patch_size=16,
@@ -143,9 +177,9 @@ class VisionTransformer(nn.Module):
                  init_scale=0.,
                  use_checkpoint=False,
                  use_mean_pooling=True):
-        super().__init__()
+        super(VisionTransformer, self).__init__()
         self.num_classes = num_classes
-        self.num_features = self.embed_dim = embed_dim  # num_features for consistency with other models
+        self.num_features = self.embed_dim = embed_dim
         self.patch_embed = PatchEmbed(
             img_size=img_size, patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim)
         num_patches = self.patch_embed.num_patches
@@ -207,6 +241,7 @@ class VisionTransformer(nn.Module):
         return x
 
 
+# Registering models
 @register_model
 def vit_base_patch16_224(pretrained=False, **kwargs):
     model = VisionTransformer(
@@ -214,6 +249,7 @@ def vit_base_patch16_224(pretrained=False, **kwargs):
         norm_layer=partial(nn.LayerNorm, eps=1e-6), **kwargs)
     model.default_cfg = _cfg()
     return model
+
 
 @register_model
 def vit_large_patch16_224(pretrained=False, **kwargs):
