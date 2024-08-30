@@ -5,9 +5,22 @@ import torch.utils.checkpoint as checkpoint
 import math
 import numpy as np
 from functools import partial
-from timm.models.layers import trunc_normal_, DropPath
+from timm.models.layers import drop_path, to_2tuple, trunc_normal_
 from timm.models.registry import register_model
 
+
+class DropPath(nn.Module):
+    """Drop paths (Stochastic Depth) per sample  (when applied in main path of residual blocks).
+    """
+    def __init__(self, drop_prob=None):
+        super(DropPath, self).__init__()
+        self.drop_prob = drop_prob
+
+    def forward(self, x):
+        return drop_path(x, self.drop_prob, self.training)
+    
+    def extra_repr(self) -> str:
+        return 'p={}'.format(self.drop_prob)
 
 # Positional Encoding from OSRT
 class PositionalEncoding(nn.Module):
@@ -35,9 +48,13 @@ class RayEncoder(nn.Module):
         self.ray_encoding = PositionalEncoding(num_octaves=ray_octaves, start_octave=ray_start_octave)
 
     def forward(self, pos, rays):
-        batch_size, height, width, dims = rays.shape
-        pos_enc = self.pos_encoding(pos.unsqueeze(1))
-        pos_enc = pos_enc.view(batch_size, pos_enc.shape[-1], 1, 1).repeat(1, 1, height, width)
+        batch_size, height, width, _ = rays.shape
+
+        # Reshape pos to match the expected input shape for PositionalEncoding
+        pos = pos.view(batch_size, height * width, -1)  # Reshape to (B, H*W, 3)
+        pos_enc = self.pos_encoding(pos)
+
+        pos_enc = pos_enc.view(batch_size, pos_enc.shape[-1], height, width).repeat(1, 1, height, width)
         rays = rays.flatten(1, 2)
         ray_enc = self.ray_encoding(rays)
         ray_enc = ray_enc.view(batch_size, height, width, ray_enc.shape[-1]).permute((0, 3, 1, 2))
