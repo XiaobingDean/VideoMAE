@@ -111,7 +111,7 @@ def get_args():
     # distributed training parameters
     parser.add_argument('--world_size', default=1, type=int,
                         help='number of distributed processes')
-    parser.add_argument('--local_rank', default=-1, type=int)
+    parser.add_argument('--local-rank', default=-1, type=int)
     parser.add_argument('--dist_on_itp', action='store_true')
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
 
@@ -145,15 +145,18 @@ def main(args):
 
     cudnn.benchmark = True
 
-    model = get_model(args)
+    # model = get_model(args)
+    from modeling_pretrain import pretrain_videomae_base_patch16_224  
+    model = pretrain_videomae_base_patch16_224()
     patch_size = model.encoder.patch_embed.patch_size
     print("Patch size = %s" % str(patch_size))
     args.window_size = (args.num_frames // 2, args.input_size // patch_size[0], args.input_size // patch_size[1])
     args.patch_size = patch_size
 
     # get dataset
-    dataset_train = build_pretraining_dataset(args)
-
+    # dataset_train = build_pretraining_dataset(args)
+    from NViST.dataLoader.ray_dataset import MVImgNetNeRF
+    dataset_train = MVImgNetNeRF("./")
 
     num_tasks = utils.get_world_size()
     global_rank = utils.get_rank()

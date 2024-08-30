@@ -15,7 +15,7 @@ from torch.nn.common_types import _size_2_t
 
 class MVImgNetNeRF(Dataset):
     def __init__(self, datadir: str, split: str='train', 
-                 img_wh: List[int]=[90,160], patch_hw: List[int]=[40,30], number_of_imgs_from_the_same_scene: int=4, return_as_patches: bool = True):
+                 img_wh: List[int]=[90,160], patch_hw: List[int]=[40,30], number_of_imgs_from_the_same_scene: int=4, return_as_patches: bool = False):
 
         '''
         Load cached data, return image patches and rays of its pixel
@@ -31,6 +31,8 @@ class MVImgNetNeRF(Dataset):
 
         cache_path = os.path.join(self.root_dir, 'cache_portrait_{}.th'.format(split))
         cache = torch.load(cache_path)
+        print("cache.keys():", cache.keys())
+        print("len:", len(cache['img_files']))
 
         self.img_files = [img_file for img_file in cache['img_files']]
         self.number_of_imgs_per_scene = cache['number_of_imgs_per_scene']
@@ -54,7 +56,8 @@ class MVImgNetNeRF(Dataset):
 
     def load_image(self, index: Union[int, np.int_], scene_index: int) -> np.ndarray:
         origin_H, origin_W = self.original_img_hws[scene_index]
-        imgs = np.array(Image.open(self.img_files[index]).resize([origin_W, origin_H], Image.LANCZOS).convert('RGB')) / 255.
+        file_path = self.img_files[index].replace("../data/", "/root/autodl-tmp/VideoMAE/NViST/data/").replace("images_12", "images").replace("images_13", "images").replace("images_25", "images").replace("images_79", "images").replace("images_9", "images")
+        imgs = np.array(Image.open(file_path).resize([640, 128], Image.LANCZOS).convert('RGB')) / 255.
         return imgs
 
     def patchify(self, img, patch_size: _size_2_t):
@@ -115,7 +118,8 @@ class MVImgNetNeRF(Dataset):
 
         assert self.number_of_imgs_from_the_same_scene > 1
         new_idxs = np.random.randint(low=start_idx, high=end_idx, size=(self.number_of_imgs_from_the_same_scene-1))
-        return_imgs = [self.load_image(it, scene_idx) for it in [index]  + [new_idx for new_idx in new_idxs]]
+        return_imgs = [torch.transpose(torch.from_numpy(self.load_image(it, scene_idx)), 0, 2) for it in [index]  + [new_idx for new_idx in new_idxs]]
+        return_imgs = torch.cat(return_imgs)
         
         c2ws = [self.c2ws[it] for it in [index]+ [new_idx for new_idx in new_idxs]]
 
@@ -130,9 +134,12 @@ class MVImgNetNeRF(Dataset):
         directions = directions / torch.norm(directions, dim=-1, keepdim=True)
 
         ray_origins_directions = [get_rays(directions, torch.from_numpy(c2w).float()) for c2w in c2ws]
-
-        ros = np.array([ro_rd[0] for ro_rd in ray_origins_directions])
-        rds = np.array([ro_rd[1] for ro_rd in ray_origins_directions])
+        # for item in ray_origins_directions:
+            # print(type(item[0]))
+        # print("ray_origins_directions:", ray_origins_directions)
+        ros = np.array([ro_rd[0].detach().numpy() for ro_rd in ray_origins_directions])
+        print("ros.shape:", ros.shape)
+        rds = np.array([ro_rd[1].detach().numpy() for ro_rd in ray_origins_directions])
 
         output['ndc_ray'] = self.ndc_ray
         output['white_bg'] = self.white_bg

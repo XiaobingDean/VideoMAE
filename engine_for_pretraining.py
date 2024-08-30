@@ -29,16 +29,22 @@ def train_one_epoch(model: torch.nn.Module, data_loader: Iterable, optimizer: to
                     param_group["lr"] = lr_schedule_values[it] * param_group["lr_scale"]
                 if wd_schedule_values is not None and param_group["weight_decay"] > 0:
                     param_group["weight_decay"] = wd_schedule_values[it]
-
-        videos, bool_masked_pos = batch
+        print("batch:", batch.keys())
+        # videos, bool_masked_pos = batch
+        videos_input= batch["images"]
+        videos= torch.unsqueeze(batch["images"], 1)
         videos = videos.to(device, non_blocking=True)
-        bool_masked_pos = bool_masked_pos.to(device, non_blocking=True).flatten(1).to(torch.bool)
+        # bool_masked_pos = bool_masked_pos.to(device, non_blocking=True).flatten(1).to(torch.bool)
+        bool_masked_pos = torch.rand(32).bool()
 
         with torch.no_grad():
             # calculate the predict label
-            mean = torch.as_tensor(IMAGENET_DEFAULT_MEAN).to(device)[None, :, None, None, None]
-            std = torch.as_tensor(IMAGENET_DEFAULT_STD).to(device)[None, :, None, None, None]
-            unnorm_videos = videos * std + mean  # in [0, 1]
+            mean = torch.as_tensor(IMAGENET_DEFAULT_MEAN).to(device)
+            std = torch.as_tensor(IMAGENET_DEFAULT_STD).to(device)
+            print("mean:", mean)
+            print("std:", std)
+            # unnorm_videos = videos * std + mean  # in [0, 1]
+            unnorm_videos = videos
 
             if normlize_target:
                 videos_squeeze = rearrange(unnorm_videos, 'b c (t p0) (h p1) (w p2) -> b (t h w) (p0 p1 p2) c', p0=2, p1=patch_size, p2=patch_size)
@@ -50,10 +56,14 @@ def train_one_epoch(model: torch.nn.Module, data_loader: Iterable, optimizer: to
                 videos_patch = rearrange(unnorm_videos, 'b c (t p0) (h p1) (w p2) -> b (t h w) (p0 p1 p2 c)', p0=2, p1=patch_size, p2=patch_size)
 
             B, _, C = videos_patch.shape
+            print("videos_patch.shape:", videos_patch.shape)
             labels = videos_patch[bool_masked_pos].reshape(B, -1, C)
 
         with torch.cuda.amp.autocast():
-            outputs = model(videos, bool_masked_pos)
+            rays = batch["ray_directions"]
+            print("rays.shape", rays.shape)
+            camera_pos = batch["ray_origins"]
+            outputs = model(videos_input, camera_pos=camera_pos, rays=rays, mask=bool_masked_pos)
             loss = loss_func(input=outputs, target=labels)
 
         loss_value = loss.item()

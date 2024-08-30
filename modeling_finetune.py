@@ -53,7 +53,8 @@ class RayEncoder(nn.Module):
         # Reshape pos to match the expected input shape for PositionalEncoding
         pos = pos.view(batch_size, height * width, -1)  # Reshape to (B, H*W, 3)
         pos_enc = self.pos_encoding(pos)
-
+        print("height:", height)
+        print("width:", width)
         pos_enc = pos_enc.view(batch_size, pos_enc.shape[-1], height, width).repeat(1, 1, height, width)
         rays = rays.flatten(1, 2)
         ray_enc = self.ray_encoding(rays)

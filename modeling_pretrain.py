@@ -164,3 +164,26 @@ class PretrainVisionTransformer(nn.Module):
 
         x = self.decoder(x_full, rays, pos_emd_mask.shape[1])
         return x
+    
+def pretrain_videomae_base_patch16_224(pretrained=False, **kwargs):
+    model = PretrainVisionTransformer(
+        img_size=224,
+        patch_size=16, 
+        encoder_embed_dim=768, 
+        encoder_depth=12, 
+        encoder_num_heads=12,
+        encoder_num_classes=0,
+        decoder_num_classes=1536,
+        decoder_embed_dim=384,
+        decoder_num_heads=6,
+        mlp_ratio=4, 
+        qkv_bias=True,
+        norm_layer=partial(nn.LayerNorm, eps=1e-6), 
+        **kwargs)
+    # model.default_cfg = _cfg()
+    if pretrained:
+        checkpoint = torch.load(
+            kwargs["init_ckpt"], map_location="cpu"
+        )
+        model.load_state_dict(checkpoint["model"])
+    return model
