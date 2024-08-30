@@ -14,7 +14,6 @@ class PretrainVisionTransformerEncoder(nn.Module):
         self.num_classes = num_classes
         self.num_features = self.embed_dim = embed_dim
 
-        # Patch embedding expects combined channels (image + ray)
         self.patch_embed = PatchEmbed(
             img_size=img_size, patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim)
         self.ray_encoder = RayEncoder(pos_octaves=pos_octaves, ray_octaves=ray_octaves)
@@ -47,23 +46,18 @@ class PretrainVisionTransformerEncoder(nn.Module):
             nn.init.constant_(m.weight, 1.0)
 
     def forward_features(self, x, camera_pos, rays, mask):
-        # Process ray encoding to match image dimensions
         B, C, H, W = x.shape
-        ray_encoded = self.ray_encoder(camera_pos, rays)  # Expecting output in shape B x (C_ray) x H x W
+        ray_encoded = self.ray_encoder(camera_pos, rays)
 
-        # Concatenate image and ray encoding along the channel dimension
-        combined_input = torch.cat((x, ray_encoded), dim=1)  # Now combined_input is B x (C_img + C_ray) x H x W
+        combined_input = torch.cat((x, ray_encoded), dim=1)
 
-        # Apply patch embedding on the combined input
         x = self.patch_embed(combined_input)
 
-        # Process positional embeddings and masking
         B, _, _ = x.size()
         if self.pos_embed is not None:
             x = x + self.pos_embed.expand(B, -1, -1).type_as(x).to(x.device).clone().detach()
         x = self.pos_drop(x)
 
-        # Apply mask to select only visible patches
         x_vis = x[~mask].reshape(B, -1, self.embed_dim)
 
         for blk in self.blocks:
@@ -86,6 +80,12 @@ class PretrainVisionTransformerDecoder(nn.Module):
         self.patch_size = patch_size
         self.use_checkpoint = use_checkpoint
 
+        self.mlp_ray = nn.Sequential(
+            nn.Linear(embed_dim, 512),
+            nn.ReLU(),
+            nn.Linear(512, embed_dim)
+        )
+
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]
         self.blocks = nn.ModuleList([
             Block(
@@ -107,8 +107,12 @@ class PretrainVisionTransformerDecoder(nn.Module):
             nn.init.constant_(m.bias, 0)
             nn.init.constant_(m.weight, 1.0)
 
-    def forward(self, x, return_token_num, mask_token=None, pos_embed=None):
+    def forward(self, x, rays, return_token_num, mask_token=None, pos_embed=None):
         B, N, C = x.shape
+
+        ray_mapped = self.mlp_ray(rays)  # Apply MLP to ray
+        x = x + ray_mapped  # Add the mapped ray to token embeddings
+
         if mask_token is not None and pos_embed is not None:
             expand_pos_embed = pos_embed.expand(B, -1, -1).type_as(x).to(x.device).clone().detach()
             pos_emd_mask = expand_pos_embed[:, -return_token_num:]
@@ -119,7 +123,6 @@ class PretrainVisionTransformerDecoder(nn.Module):
 
         x = self.head(self.norm(x))
         return x
-
 
 class PretrainVisionTransformer(nn.Module):
     def __init__(self, img_size=224, patch_size=16, encoder_in_chans=3, encoder_num_classes=0,
@@ -158,5 +161,7 @@ class PretrainVisionTransformer(nn.Module):
         pos_emd_vis = expand_pos_embed[~mask].reshape(B, -1, C)
         pos_emd_mask = expand_pos_embed[mask].reshape(B, -1, C)
         x_full = torch.cat([x_vis + pos_emd_vis, self.mask_token + pos_emd_mask], dim=1)
-        x = self.decoder(x_full, pos_emd_mask.shape[1])
+
+        # Decoder now receives rays as an input
+        x = self.decoder(x_full, rays, pos_emd_mask.shape[1])
         return x
