@@ -13,6 +13,7 @@
 > [Zhan Tong](https://github.com/yztongzhan), [Yibing Song](https://ybsong00.github.io/), [Jue Wang](https://juewang725.github.io/), [Limin Wang](http://wanglimin.github.io/)<br>Nanjing University, Tencent AI Lab
 
 ## 📰 News
+
 **[2023.4.18]** 🎈Everyone can download **Kinetics-400**, which is used in VideoMAE, from [this link](https://opendatalab.com/Kinetics-400).<br>
 **[2023.4.18]** Code and pre-trained models of [VideoMAE V2](https://arxiv.org/abs/2303.16727) have been released! Check and enjoy this [repo](https://github.com/OpenGVLab/VideoMAEv2)!<br>
 **[2023.4.17]** We propose **[EVAD](https://arxiv.org/abs/2304.08451)**, an **end-to-end Video Action Detection** framework.<br>
@@ -47,23 +48,23 @@ VideoMAE works well for video datasets of different scales and can achieve **87.
 
 ### ✨ Something-Something V2
 
-|  Method  | Extra Data | Backbone | Resolution | #Frames x Clips x Crops | Top-1 | Top-5 |
-| :------: | :--------: | :------: | :--------: | :---------------------: | :---: | :---: |
-| VideoMAE |  ***no***  |  ViT-S   |  224x224   |         16x2x3          | 66.8  | 90.3  |
-| VideoMAE |  ***no***  |  ViT-B   |  224x224   |         16x2x3          | 70.8  | 92.4  |
-| VideoMAE |  ***no***  |  ViT-L   |  224x224   |         16x2x3          | 74.3  | 94.6  |
-| VideoMAE |  ***no***  |  ViT-L   |  224x224   |         32x1x3          | 75.4  | 95.2  |
+| Method   | Extra Data | Backbone | Resolution | #Frames x Clips x Crops | Top-1 | Top-5 |
+|:--------:|:----------:|:--------:|:----------:|:-----------------------:|:-----:|:-----:|
+| VideoMAE | ***no***   | ViT-S    | 224x224    | 16x2x3                  | 66.8  | 90.3  |
+| VideoMAE | ***no***   | ViT-B    | 224x224    | 16x2x3                  | 70.8  | 92.4  |
+| VideoMAE | ***no***   | ViT-L    | 224x224    | 16x2x3                  | 74.3  | 94.6  |
+| VideoMAE | ***no***   | ViT-L    | 224x224    | 32x1x3                  | 75.4  | 95.2  |
 
 ### ✨ Kinetics-400
 
-|  Method  | Extra Data | Backbone | Resolution | #Frames x Clips x Crops | Top-1 | Top-5 |
-| :------: | :--------: | :------: | :--------: | :---------------------: | :---: | :---: |
-| VideoMAE |  ***no***  |  ViT-S   |  224x224   |         16x5x3          | 79.0  | 93.8  |
-| VideoMAE |  ***no***  |  ViT-B   |  224x224   |         16x5x3          | 81.5  | 95.1  |
-| VideoMAE |  ***no***  |  ViT-L   |  224x224   |         16x5x3          | 85.2  | 96.8  |
-| VideoMAE |  ***no***  |  ViT-H   |  224x224   |         16x5x3          | 86.6  | 97.1  |
-| VideoMAE |  ***no***  |  ViT-L   |  320x320   |         32x4x3          | 86.1  | 97.3  |
-| VideoMAE |  ***no***  |  ViT-H   |  320x320   |         32x4x3          | 87.4  | 97.6  |
+| Method   | Extra Data | Backbone | Resolution | #Frames x Clips x Crops | Top-1 | Top-5 |
+|:--------:|:----------:|:--------:|:----------:|:-----------------------:|:-----:|:-----:|
+| VideoMAE | ***no***   | ViT-S    | 224x224    | 16x5x3                  | 79.0  | 93.8  |
+| VideoMAE | ***no***   | ViT-B    | 224x224    | 16x5x3                  | 81.5  | 95.1  |
+| VideoMAE | ***no***   | ViT-L    | 224x224    | 16x5x3                  | 85.2  | 96.8  |
+| VideoMAE | ***no***   | ViT-H    | 224x224    | 16x5x3                  | 86.6  | 97.1  |
+| VideoMAE | ***no***   | ViT-L    | 320x320    | 32x4x3                  | 86.1  | 97.3  |
+| VideoMAE | ***no***   | ViT-H    | 320x320    | 32x4x3                  | 87.4  | 97.6  |
 
 ### ✨ AVA 2.2
 
@@ -83,10 +84,10 @@ Please check the code and checkpoints in [VideoMAE-Action-Detection](https://git
 
 ### ✨ UCF101 & HMDB51
 
-|  Method  |  Extra Data  | Backbone | UCF101 | HMDB51 |
-| :------: | :----------: | :------: | :----: | :----: |
-| VideoMAE |   ***no***   |  ViT-B   |  91.3  |  62.6  |
-| VideoMAE | Kinetics-400 |  ViT-B   |  96.1  |  73.3  |
+| Method   | Extra Data   | Backbone | UCF101 | HMDB51 |
+|:--------:|:------------:|:--------:|:------:|:------:|
+| VideoMAE | ***no***     | ViT-B    | 91.3   | 62.6   |
+| VideoMAE | Kinetics-400 | ViT-B    | 96.1   | 73.3   |
 
 ## 🔨 Installation
 
@@ -112,7 +113,7 @@ We provide pre-trained and fine-tuned models in [MODEL_ZOO.md](MODEL_ZOO.md).
 
 We provide the script for visualization in [`vis.sh`](vis.sh).  Colab notebook for better visualization is coming soon.
 
-## ☎️ Contact 
+## ☎️ Contact
 
 Zhan Tong: tongzhan@smail.nju.edu.cn
 

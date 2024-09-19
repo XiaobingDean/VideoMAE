@@ -22,7 +22,7 @@ def main():
     """
 
     arg_parser = argparse.ArgumentParser(description="Wrapper for MVImgNet")
-    arg_parser.add_argument("--base_dir", default="../data/", help="category")
+    arg_parser.add_argument("--base_dir", default="./data/", help="category")
     args = arg_parser.parse_args()
     base_dir = args.base_dir
 

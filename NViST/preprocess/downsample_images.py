@@ -25,7 +25,7 @@ def main():
         -r, --multi_resolution: Whether to also downsample images by 3 and 6 times the original size.
     """
     parser = argparse.ArgumentParser(description='Downsample images')
-    parser.add_argument("-d", "--data_dir", type=str, default="../../data/mvimgnet_original", help="where the dataset is")
+    parser.add_argument("-d", "--data_dir", type=str, default="../data", help="where the dataset is")
     # parser.add_argument("-r", "--multi_resolution", type=str2bool, default=False, help="if yes, we also downsample images by 3 and 6")
     parser.add_argument("-r", "--multi_resolution", default=False, help="if yes, we also downsample images by 3 and 6")
     args = parser.parse_args()

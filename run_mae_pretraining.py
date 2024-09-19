@@ -1,3 +1,6 @@
+import sys
+sys.path.append('NViST/dataLoader')
+
 import argparse
 import datetime
 import numpy as np
@@ -111,7 +114,7 @@ def get_args():
     # distributed training parameters
     parser.add_argument('--world_size', default=1, type=int,
                         help='number of distributed processes')
-    parser.add_argument('--local-rank', default=-1, type=int)
+    parser.add_argument('--local_rank', default=-1, type=int)
     parser.add_argument('--dist_on_itp', action='store_true')
     parser.add_argument('--dist_url', default='env://', help='url used to set up distributed training')
 
@@ -148,15 +151,17 @@ def main(args):
     # model = get_model(args)
     from modeling_pretrain import pretrain_videomae_base_patch16_224  
     model = pretrain_videomae_base_patch16_224()
-    patch_size = model.encoder.patch_embed.patch_size
-    print("Patch size = %s" % str(patch_size))
-    args.window_size = (args.num_frames // 2, args.input_size // patch_size[0], args.input_size // patch_size[1])
-    args.patch_size = patch_size
+    # patch_size = model.encoder.patch_embed.patch_size
+    # print("Patch size = %s" % str(patch_size))
+    # args.window_size = (args.num_frames // 2, args.input_size // patch_size[0], args.input_size // patch_size[1])
+    patch_size = [30]
+    args.patch_size = 30 #
 
     # get dataset
     # dataset_train = build_pretraining_dataset(args)
     from NViST.dataLoader.ray_dataset import MVImgNetNeRF
-    dataset_train = MVImgNetNeRF("./")
+    dataset_train = MVImgNetNeRF(args.data_path)
+    #print(dataset_train.img_files)
 
     num_tasks = utils.get_world_size()
     global_rank = utils.get_rank()
@@ -202,7 +207,7 @@ def main(args):
     print("Number of training examples per epoch = %d" % (total_batch_size * num_training_steps_per_epoch))
 
     if args.distributed:
-        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=False)
+        model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu], find_unused_parameters=True)
         model_without_ddp = model.module
 
     optimizer = create_optimizer(

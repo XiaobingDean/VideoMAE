@@ -3,7 +3,7 @@ import numpy as np
 from PIL import Image
 import torch
 from torch.utils.data import Dataset
-from .ray_utils import get_ray_directions, get_inverse_pose, get_rays
+from ray_utils import get_ray_directions, get_inverse_pose, get_rays
 from torchvision.transforms import ToTensor
 from torch import Tensor
 from typing import Tuple, Union, List
@@ -92,7 +92,6 @@ class MVImgNetNeRF(Dataset):
 
         directions = get_ray_directions(self.img_wh[1], self.img_wh[0], Tensor([self.focals[scene_idx], self.focals[scene_idx]]))
         directions = directions / torch.norm(directions, dim=-1, keepdim=True)
-
         ray_origins_directions = [get_rays(directions, torch.from_numpy(c2w).float()) for c2w in c2ws]
         ros = [ro_rd[0].unsqueeze(0) for ro_rd in ray_origins_directions]
         rds = [ro_rd[1].unsqueeze(0) for ro_rd in ray_origins_directions]
@@ -121,7 +120,8 @@ class MVImgNetNeRF(Dataset):
         return_imgs = [torch.transpose(torch.from_numpy(self.load_image(it, scene_idx)), 0, 2) for it in [index]  + [new_idx for new_idx in new_idxs]]
         return_imgs = torch.cat(return_imgs)
         
-        c2ws = [self.c2ws[it] for it in [index]+ [new_idx for new_idx in new_idxs]]
+        # c2ws = [self.c2ws[it] for it in [index]+ [new_idx for new_idx in new_idxs]]
+        c2ws = [self.c2ws[it] for it in [index]]
 
         output['indexs'] = np.array([index] + new_idxs.tolist())
 
@@ -132,13 +132,14 @@ class MVImgNetNeRF(Dataset):
 
         directions = get_ray_directions(self.img_wh[1], self.img_wh[0], Tensor([self.focals[scene_idx], self.focals[scene_idx]]))
         directions = directions / torch.norm(directions, dim=-1, keepdim=True)
-
+        print("len(c2ws):", len(c2ws))
         ray_origins_directions = [get_rays(directions, torch.from_numpy(c2w).float()) for c2w in c2ws]
         # for item in ray_origins_directions:
             # print(type(item[0]))
         # print("ray_origins_directions:", ray_origins_directions)
         ros = np.array([ro_rd[0].detach().numpy() for ro_rd in ray_origins_directions])
         print("ros.shape:", ros.shape)
+        print("len(ray_origins_directions):", len(ray_origins_directions))
         rds = np.array([ro_rd[1].detach().numpy() for ro_rd in ray_origins_directions])
 
         output['ndc_ray'] = self.ndc_ray

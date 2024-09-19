@@ -53,6 +53,8 @@ def get_rays(directions : Tensor, c2w : Tensor) -> Tuple[Tensor, Tensor]:
 
     # Rotate ray directions from camera coordinate to the world coordinate
     rays_d = directions @ c2w[:3, :3].T  # (H, W, 3)
+    print("directions.shape:", directions.shape)
+    print("(c2w[:3, :3].T).shape:", c2w[:3, :3].T.shape)
     # rays_d = rays_d / torch.norm(rays_d, dim=-1, keepdim=True)
     # The origin of all rays is the camera origin in world coordinate
     rays_o = c2w[:3, 3].expand(rays_d.shape)  # (H, W, 3)
